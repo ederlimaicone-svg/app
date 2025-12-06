@@ -1,31 +1,21 @@
 import streamlit as st
 import google.generativeai as genai
-from audiorecorder import audiorecorder
+from streamlit_mic_recorder import mic_recorder
 import tempfile
 import os
-import streamlit as st
-# ... outros imports ...
-
-# ADICIONE ISTO PARA TESTAR:
-try:
-    st.write("Testando Segredos:", st.secrets["GOOGLE_API_KEY"][:5] + "...")
-except Exception as e:
-    st.error(f"ERRO NOS SEGREDOS: {e}")
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="AI Pronunciation Coach", page_icon="🎙️")
 st.title("🎙️ Seu Coach de Pronúncia (Gemini)")
 
 # --- SEU MATERIAL DE AULA AQUI ---
-# Cole aqui o texto que o aluno deve ler.
 TARGET_TEXT = """
 Usually, Silas's stubborn vision is to sift seven silky seashells beside the station.
 """
 
 st.info(f"📝 **Tarefa:** Leia o texto abaixo em voz alta:\n\n --- \n\n## {TARGET_TEXT}\n ---")
 
-# --- CONFIGURAÇÃO DO GEMINI (O CÉREBRO) ---
-# Pegue a chave dos "Segredos" do Streamlit (ensinarei no passo 3)
+# --- CONFIGURAÇÃO DO GEMINI ---
 try:
     api_key = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
@@ -33,7 +23,7 @@ except Exception:
     st.error("Erro: Chave de API não encontrada nos segredos.")
     st.stop()
 
-# O PROMPT MÁGICO - Isso faz ele agir como no vídeo
+# O PROMPT MÁGICO
 SYSTEM_PROMPT = f"""
 You are an expert phonetician and English pronunciation coach.
 Your task is to listen to the user's audio and compare it closely to this target text: "{TARGET_TEXT}".
@@ -52,40 +42,48 @@ Keep the tone encouraging but technically precise.
 """
 
 model = genai.GenerativeModel(
-    model_name="gemini-1.5-pro-latest", # Usando o modelo Pro que entende áudio nativo
+    model_name="gemini-1.5-pro-latest",
     system_instruction=SYSTEM_PROMPT
 )
 
-# --- INTERFACE DE GRAVAÇÃO ---
-st.write("Clique no microfone para começar a gravar e clique novamente para parar.")
-audio = audiorecorder("Gravar", "Parar")
+# --- INTERFACE DE GRAVAÇÃO (NOVA) ---
+st.write("Clique no microfone para gravar. A gravação termina automaticamente ao parar de falar ou clicar novamente.")
 
-if len(audio) > 0:
-    # 1. Salva o áudio temporariamente
-    st.audio(audio.export().read())
+# O novo gravador retorna um dicionário com os bytes do áudio
+audio = mic_recorder(
+    start_prompt="Gravar Áudio ⏺️",
+    stop_prompt="Parar Gravação ⏹️",
+    key='recorder',
+    format="wav" # Garante formato compatível
+)
+
+if audio:
+    # Mostra o player de áudio para o aluno ouvir o que gravou
+    st.audio(audio['bytes'])
     
-    with st.spinner("O Gemini está analisando sua fonética..."):
-        # Salva o arquivo wav para enviar ao Google
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as fp:
-            audio.export(fp.name, format="wav")
-            temp_filename = fp.name
+    # Botão para enviar para análise
+    if st.button("Analisar minha pronúncia 🚀"):
+        with st.spinner("O Gemini está analisando sua fonética..."):
+            try:
+                # 1. Salva o áudio temporariamente
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as fp:
+                    fp.write(audio['bytes'])
+                    temp_filename = fp.name
 
-        # 2. Envia o arquivo de áudio para o Gemini
-        try:
-            audio_file_ref = genai.upload_file(path=temp_filename)
-            
-            # 3. Pede a análise
-            response = model.generate_content(
-                ["Please analyze my pronunciation based on the target text.", audio_file_ref]
-            )
-            
-            # 4. Mostra o resultado
-            st.success("Análise concluída!")
-            st.markdown(response.text)
-            
-        except Exception as e:
-            st.error(f"Ocorreu um erro na análise: {e}")
-        finally:
-            # Limpa o arquivo temporário
-            os.remove(temp_filename)
+                # 2. Envia para o Gemini
+                audio_file_ref = genai.upload_file(path=temp_filename)
+                
+                # 3. Pede a análise
+                response = model.generate_content(
+                    ["Please analyze my pronunciation based on the target text.", audio_file_ref]
+                )
+                
+                # 4. Resultado
+                st.success("Análise concluída!")
+                st.markdown(response.text)
 
+                # Limpeza
+                os.remove(temp_filename)
+                
+            except Exception as e:
+                st.error(f"Ocorreu um erro na conexão com o Gemini: {e}")
