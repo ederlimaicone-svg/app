@@ -3,6 +3,14 @@ import google.generativeai as genai
 from audiorecorder import audiorecorder
 import tempfile
 import os
+import streamlit as st
+# ... outros imports ...
+
+# ADICIONE ISTO PARA TESTAR:
+try:
+    st.write("Testando Segredos:", st.secrets["GOOGLE_API_KEY"][:5] + "...")
+except Exception as e:
+    st.error(f"ERRO NOS SEGREDOS: {e}")
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="AI Pronunciation Coach", page_icon="🎙️")
@@ -80,3 +88,4 @@ if len(audio) > 0:
         finally:
             # Limpa o arquivo temporário
             os.remove(temp_filename)
+
