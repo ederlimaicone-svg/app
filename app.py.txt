@@ -1,0 +1,82 @@
+import streamlit as st
+import google.generativeai as genai
+from audiorecorder import audiorecorder
+import tempfile
+import os
+
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(page_title="AI Pronunciation Coach", page_icon="🎙️")
+st.title("🎙️ Seu Coach de Pronúncia (Gemini)")
+
+# --- SEU MATERIAL DE AULA AQUI ---
+# Cole aqui o texto que o aluno deve ler.
+TARGET_TEXT = """
+Usually, Silas's stubborn vision is to sift seven silky seashells beside the station.
+"""
+
+st.info(f"📝 **Tarefa:** Leia o texto abaixo em voz alta:\n\n --- \n\n## {TARGET_TEXT}\n ---")
+
+# --- CONFIGURAÇÃO DO GEMINI (O CÉREBRO) ---
+# Pegue a chave dos "Segredos" do Streamlit (ensinarei no passo 3)
+try:
+    api_key = st.secrets["GOOGLE_API_KEY"]
+    genai.configure(api_key=api_key)
+except Exception:
+    st.error("Erro: Chave de API não encontrada nos segredos.")
+    st.stop()
+
+# O PROMPT MÁGICO - Isso faz ele agir como no vídeo
+SYSTEM_PROMPT = f"""
+You are an expert phonetician and English pronunciation coach.
+Your task is to listen to the user's audio and compare it closely to this target text: "{TARGET_TEXT}".
+
+You must analyze the actual audio acoustics, not just a transcription. Focus on specific phonemes, stress, and intonation.
+
+Your output must be structured exactly like this:
+1.  **Overall Score:** (Give a score from 0-100% based on native-like accuracy).
+2.  **Main Issues identified:** (List 2-3 major phonetic errors).
+3.  **Detailed Feedback & Correction:**
+    * For each major error, identify the specific word and sound (e.g., "The 'th' in 'think'").
+    * Explain *physically* how to correct it (e.g., "Your tongue was behind your teeth. To fix it, place the tip of your tongue slightly between your front teeth and blow air").
+4.  **Positive Note:** (One thing they did well).
+
+Keep the tone encouraging but technically precise.
+"""
+
+model = genai.GenerativeModel(
+    model_name="gemini-1.5-pro-latest", # Usando o modelo Pro que entende áudio nativo
+    system_instruction=SYSTEM_PROMPT
+)
+
+# --- INTERFACE DE GRAVAÇÃO ---
+st.write("Clique no microfone para começar a gravar e clique novamente para parar.")
+audio = audiorecorder("Gravar", "Parar")
+
+if len(audio) > 0:
+    # 1. Salva o áudio temporariamente
+    st.audio(audio.export().read())
+    
+    with st.spinner("O Gemini está analisando sua fonética..."):
+        # Salva o arquivo wav para enviar ao Google
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as fp:
+            audio.export(fp.name, format="wav")
+            temp_filename = fp.name
+
+        # 2. Envia o arquivo de áudio para o Gemini
+        try:
+            audio_file_ref = genai.upload_file(path=temp_filename)
+            
+            # 3. Pede a análise
+            response = model.generate_content(
+                ["Please analyze my pronunciation based on the target text.", audio_file_ref]
+            )
+            
+            # 4. Mostra o resultado
+            st.success("Análise concluída!")
+            st.markdown(response.text)
+            
+        except Exception as e:
+            st.error(f"Ocorreu um erro na análise: {e}")
+        finally:
+            # Limpa o arquivo temporário
+            os.remove(temp_filename)
